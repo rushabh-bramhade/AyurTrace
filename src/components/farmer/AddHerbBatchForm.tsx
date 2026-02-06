@@ -88,7 +88,7 @@ const AddHerbBatchForm = ({ farmerId, onSuccess }: AddHerbBatchFormProps) => {
         farmerId,
         processingSteps: steps.map((s) => s.step).join(","),
       };
-      const hash = await computeHash(JSON.stringify(dataForHash));
+      const hash = await generateHash(dataForHash);
 
       const { error } = await supabase.from("herb_batches").insert({
         batch_code: batchCode,
