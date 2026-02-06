@@ -1,26 +1,82 @@
-import { useState } from "react";
-import { Link } from "react-router-dom";
+import { useState, useEffect } from "react";
+import { Link, useNavigate } from "react-router-dom";
 import { Eye, EyeOff, UserPlus } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { useToast } from "@/hooks/use-toast";
 import Layout from "@/components/Layout";
+import { useAuth } from "@/contexts/AuthContext";
 import logo from "@/assets/logo.png";
+import { z } from "zod";
+
+const registerSchema = z.object({
+  name: z.string().trim().min(2, "Name must be at least 2 characters").max(100),
+  email: z.string().trim().email("Please enter a valid email address").max(255),
+  password: z.string().min(8, "Password must be at least 8 characters"),
+  role: z.enum(["customer", "farmer"], { required_error: "Please select your role" }),
+});
 
 const Register = () => {
   const [showPassword, setShowPassword] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [formData, setFormData] = useState({
     name: "",
     email: "",
     password: "",
     role: "",
   });
+  const { signUp, user, loading } = useAuth();
+  const navigate = useNavigate();
+  const { toast } = useToast();
 
-  const handleSubmit = (e: React.FormEvent) => {
+  useEffect(() => {
+    if (!loading && user) {
+      navigate("/", { replace: true });
+    }
+  }, [user, loading, navigate]);
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    // Auth will be connected via Lovable Cloud
+
+    const validation = registerSchema.safeParse(formData);
+    if (!validation.success) {
+      toast({
+        title: "Validation Error",
+        description: validation.error.errors[0].message,
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsSubmitting(true);
+    const { error } = await signUp(
+      formData.email,
+      formData.password,
+      formData.name,
+      formData.role as "farmer" | "customer"
+    );
+    setIsSubmitting(false);
+
+    if (error) {
+      let message = "An error occurred during registration.";
+      if (error.message.includes("already registered") || error.message.includes("already been registered")) {
+        message = "This email is already registered. Please log in instead.";
+      } else if (error.message.includes("password")) {
+        message = "Password must be at least 8 characters long.";
+      }
+      toast({ title: "Registration Failed", description: message, variant: "destructive" });
+    } else {
+      toast({
+        title: "Account Created!",
+        description: "Welcome to AyurTrace. You are now logged in.",
+      });
+      navigate("/", { replace: true });
+    }
   };
+
+  if (loading) return null;
 
   return (
     <Layout>
@@ -97,9 +153,9 @@ const Register = () => {
               </Select>
             </div>
 
-            <Button type="submit" className="w-full" size="lg">
+            <Button type="submit" className="w-full" size="lg" disabled={isSubmitting}>
               <UserPlus className="h-4 w-4 mr-1" />
-              Create Account
+              {isSubmitting ? "Creating account..." : "Create Account"}
             </Button>
 
             <p className="text-center text-sm text-muted-foreground">
