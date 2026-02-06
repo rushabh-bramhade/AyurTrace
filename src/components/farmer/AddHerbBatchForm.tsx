@@ -6,7 +6,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
-import { computeHash } from "@/lib/hash-utils";
+import { generateHash } from "@/lib/hash-utils";
 import { z } from "zod";
 
 const batchSchema = z.object({
