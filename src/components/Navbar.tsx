@@ -51,6 +51,14 @@ const Navbar = () => {
                     </Link>
                   </Button>
                 )}
+                {role === "customer" && (
+                  <Button variant="outline" size="sm" asChild>
+                    <Link to="/customer/dashboard">
+                      <LayoutDashboard className="h-4 w-4 mr-1" />
+                      Dashboard
+                    </Link>
+                  </Button>
+                )}
                 <span className="text-sm text-muted-foreground">
                   {profile?.name || user.email}
                 </span>
@@ -106,6 +114,15 @@ const Navbar = () => {
                   {role === "farmer" && (
                     <Link
                       to="/farmer/dashboard"
+                      className="px-3 py-2 rounded-md text-sm font-medium text-muted-foreground hover:bg-secondary hover:text-primary"
+                      onClick={() => setIsOpen(false)}
+                    >
+                      Dashboard
+                    </Link>
+                  )}
+                  {role === "customer" && (
+                    <Link
+                      to="/customer/dashboard"
                       className="px-3 py-2 rounded-md text-sm font-medium text-muted-foreground hover:bg-secondary hover:text-primary"
                       onClick={() => setIsOpen(false)}
                     >
