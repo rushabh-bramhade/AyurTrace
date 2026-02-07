@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { generateHash } from "@/lib/hash-utils";
+import ImageUpload from "./ImageUpload";
 import { z } from "zod";
 
 const batchSchema = z.object({
@@ -29,6 +30,7 @@ interface AddHerbBatchFormProps {
 const AddHerbBatchForm = ({ farmerId, onSuccess }: AddHerbBatchFormProps) => {
   const { toast } = useToast();
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [imageUrl, setImageUrl] = useState("");
   const [form, setForm] = useState({
     herbName: "",
     scientificName: "",
@@ -65,20 +67,17 @@ const AddHerbBatchForm = ({ farmerId, onSuccess }: AddHerbBatchFormProps) => {
     setIsSubmitting(true);
 
     try {
-      // Generate batch code
       const batchCode = `ATB-${new Date().getFullYear()}-${String(Date.now()).slice(-6)}`;
 
-      // Parse processing steps
       const steps = form.processingSteps
         .split("\n")
         .filter((s) => s.trim())
-        .map((step, i) => ({
+        .map((step) => ({
           step: step.trim(),
           date: form.harvestDate,
           description: step.trim(),
         }));
 
-      // Compute hash for integrity
       const dataForHash = {
         batchCode,
         herbName: form.herbName,
@@ -103,6 +102,7 @@ const AddHerbBatchForm = ({ farmerId, onSuccess }: AddHerbBatchFormProps) => {
         unit: form.unit,
         hash,
         category: form.category || null,
+        image_url: imageUrl || null,
         status: "active",
       });
 
@@ -124,7 +124,7 @@ const AddHerbBatchForm = ({ farmerId, onSuccess }: AddHerbBatchFormProps) => {
         category: "",
         processingSteps: "",
       });
-
+      setImageUrl("");
       onSuccess();
     } catch (error: any) {
       toast({
@@ -142,6 +142,11 @@ const AddHerbBatchForm = ({ farmerId, onSuccess }: AddHerbBatchFormProps) => {
       <div className="flex items-center gap-2 mb-2">
         <Leaf className="h-5 w-5 text-primary" />
         <h2 className="text-xl font-semibold text-foreground">Add New Herb Batch</h2>
+      </div>
+
+      <div className="space-y-2">
+        <Label>Herb Image</Label>
+        <ImageUpload userId={farmerId} onUpload={setImageUrl} currentUrl={imageUrl || undefined} />
       </div>
 
       <div className="grid sm:grid-cols-2 gap-4">
