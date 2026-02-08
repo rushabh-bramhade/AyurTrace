@@ -8,6 +8,7 @@ import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { generateHash } from "@/lib/hash-utils";
 import ImageUpload from "./ImageUpload";
+import CategorySelect from "./CategorySelect";
 import { z } from "zod";
 
 const batchSchema = z.object({
@@ -18,7 +19,7 @@ const batchSchema = z.object({
   harvestDate: z.string().min(1, "Harvest date is required"),
   price: z.number().positive("Price must be positive"),
   unit: z.string().trim().min(1, "Unit is required").max(50),
-  category: z.string().trim().max(100).optional(),
+  category: z.string().trim().min(1, "Category is required").max(100),
   processingSteps: z.string().trim().max(2000).optional(),
 });
 
@@ -185,10 +186,7 @@ const AddHerbBatchForm = ({ farmerId, onSuccess }: AddHerbBatchFormProps) => {
           <Label htmlFor="unit">Unit *</Label>
           <Input id="unit" placeholder="e.g. 250g" value={form.unit} onChange={(e) => handleChange("unit", e.target.value)} required />
         </div>
-        <div className="space-y-2">
-          <Label htmlFor="category">Category</Label>
-          <Input id="category" placeholder="e.g. Adaptogen" value={form.category} onChange={(e) => handleChange("category", e.target.value)} />
-        </div>
+        <CategorySelect value={form.category} onChange={(val) => handleChange("category", val)} />
       </div>
 
       <div className="space-y-2">
