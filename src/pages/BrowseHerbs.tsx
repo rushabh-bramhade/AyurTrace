@@ -1,25 +1,61 @@
-import { useState } from "react";
-import { Search } from "lucide-react";
+import { Search, Loader2 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import Layout from "@/components/Layout";
 import HerbCard from "@/components/HerbCard";
+import DbHerbCard from "@/components/DbHerbCard";
 import { herbBatches } from "@/lib/herbs-data";
-
-const categories = ["All", ...Array.from(new Set(herbBatches.map((h) => h.category)))];
+import { useBrowseHerbs } from "@/hooks/useBrowseHerbs";
+import { useState, useMemo } from "react";
 
 const BrowseHerbs = () => {
-  const [search, setSearch] = useState("");
-  const [activeCategory, setActiveCategory] = useState("All");
+  const [localSearch, setLocalSearch] = useState("");
+  const [localCategory, setLocalCategory] = useState("All");
+  const {
+    herbs: dbHerbs,
+    loading,
+    search: dbSearch,
+    setSearch: setDbSearch,
+    activeCategory: dbCategory,
+    setActiveCategory: setDbCategory,
+    categories: dbCategories,
+  } = useBrowseHerbs();
 
-  const filtered = herbBatches.filter((herb) => {
-    const matchesSearch =
-      herb.herbName.toLowerCase().includes(search.toLowerCase()) ||
-      herb.scientificName.toLowerCase().includes(search.toLowerCase()) ||
-      herb.harvestRegion.toLowerCase().includes(search.toLowerCase());
-    const matchesCategory = activeCategory === "All" || herb.category === activeCategory;
-    return matchesSearch && matchesCategory;
-  });
+  // Combine search state
+  const search = localSearch;
+  const setSearch = (val: string) => {
+    setLocalSearch(val);
+    setDbSearch(val);
+  };
+  const activeCategory = localCategory;
+  const setActiveCategory = (val: string) => {
+    setLocalCategory(val);
+    setDbCategory(val);
+  };
+
+  // Filter static herbs
+  const filteredStatic = useMemo(() => {
+    return herbBatches.filter((herb) => {
+      const q = search.toLowerCase();
+      const matchesSearch =
+        !q ||
+        herb.herbName.toLowerCase().includes(q) ||
+        herb.scientificName.toLowerCase().includes(q) ||
+        herb.harvestRegion.toLowerCase().includes(q);
+      const matchesCategory =
+        activeCategory === "All" || herb.category === activeCategory;
+      return matchesSearch && matchesCategory;
+    });
+  }, [search, activeCategory]);
+
+  // Merge categories from both sources
+  const allCategories = useMemo(() => {
+    const staticCats = new Set(herbBatches.map((h) => h.category));
+    const merged = new Set([...staticCats, ...dbCategories.filter((c) => c !== "All")]);
+    return ["All", ...Array.from(merged).sort()];
+  }, [dbCategories]);
+
+  const totalResults = filteredStatic.length + dbHerbs.length;
 
   return (
     <Layout>
@@ -45,7 +81,7 @@ const BrowseHerbs = () => {
               />
             </div>
             <div className="flex flex-wrap gap-2">
-              {categories.map((cat) => (
+              {allCategories.map((cat) => (
                 <Badge
                   key={cat}
                   variant={activeCategory === cat ? "default" : "secondary"}
@@ -58,10 +94,17 @@ const BrowseHerbs = () => {
             </div>
           </div>
 
-          {filtered.length > 0 ? (
+          {loading ? (
+            <div className="flex justify-center py-20">
+              <Loader2 className="h-8 w-8 animate-spin text-primary" />
+            </div>
+          ) : totalResults > 0 ? (
             <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
-              {filtered.map((herb) => (
+              {filteredStatic.map((herb) => (
                 <HerbCard key={herb.id} herb={herb} />
+              ))}
+              {dbHerbs.map((herb) => (
+                <DbHerbCard key={herb.id} herb={herb} />
               ))}
             </div>
           ) : (
