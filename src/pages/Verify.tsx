@@ -12,6 +12,7 @@ import type { HerbBatch } from "@/lib/herbs-data";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
+import ReviewSection from "@/components/ReviewSection";
 
 interface DbBatch {
   id: string;
@@ -300,6 +301,9 @@ const Verify = () => {
                   </div>
                 </div>
               )}
+
+              {/* Reviews */}
+              <ReviewSection batchId={dbResult.id} />
             </motion.div>
           )}
         </div>
