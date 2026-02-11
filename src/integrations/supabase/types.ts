@@ -110,6 +110,44 @@ export type Database = {
         }
         Relationships: []
       }
+      reviews: {
+        Row: {
+          batch_id: string
+          comment: string | null
+          created_at: string
+          id: string
+          rating: number
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          batch_id: string
+          comment?: string | null
+          created_at?: string
+          id?: string
+          rating: number
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          batch_id?: string
+          comment?: string | null
+          created_at?: string
+          id?: string
+          rating?: number
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "reviews_batch_id_fkey"
+            columns: ["batch_id"]
+            isOneToOne: false
+            referencedRelation: "herb_batches"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       saved_herbs: {
         Row: {
           batch_id: string

@@ -59,6 +59,14 @@ const Navbar = () => {
                     </Link>
                   </Button>
                 )}
+                {role === "admin" && (
+                  <Button variant="outline" size="sm" asChild>
+                    <Link to="/admin/dashboard">
+                      <LayoutDashboard className="h-4 w-4 mr-1" />
+                      Admin
+                    </Link>
+                  </Button>
+                )}
                 <span className="text-sm text-muted-foreground">
                   {profile?.name || user.email}
                 </span>
@@ -127,6 +135,15 @@ const Navbar = () => {
                       onClick={() => setIsOpen(false)}
                     >
                       Dashboard
+                    </Link>
+                  )}
+                  {role === "admin" && (
+                    <Link
+                      to="/admin/dashboard"
+                      className="px-3 py-2 rounded-md text-sm font-medium text-muted-foreground hover:bg-secondary hover:text-primary"
+                      onClick={() => setIsOpen(false)}
+                    >
+                      Admin Dashboard
                     </Link>
                   )}
                   <div className="flex gap-2 pt-3 border-t border-border mt-2">
