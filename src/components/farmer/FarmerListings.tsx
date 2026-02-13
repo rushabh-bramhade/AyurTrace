@@ -1,10 +1,12 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { Package, ShieldCheck, Trash2, QrCode } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import type { Tables } from "@/integrations/supabase/types";
 import BatchQRCode from "./BatchQRCode";
+import StarRating from "@/components/StarRating";
+import { useAverageRatings } from "@/hooks/useAverageRatings";
 
 interface FarmerListingsProps {
   farmerId: string;
@@ -35,6 +37,9 @@ const FarmerListings = ({ farmerId }: FarmerListingsProps) => {
   useEffect(() => {
     fetchBatches();
   }, [farmerId]);
+
+  const batchIds = useMemo(() => batches.map((b) => b.id), [batches]);
+  const ratings = useAverageRatings(batchIds);
 
   const handleDelete = async (id: string, batchCode: string) => {
     const { error } = await supabase.from("herb_batches").delete().eq("id", id);
@@ -86,6 +91,11 @@ const FarmerListings = ({ farmerId }: FarmerListingsProps) => {
                 <div className="flex items-center gap-1 mt-2 text-xs text-primary">
                   <ShieldCheck className="h-3.5 w-3.5" />
                   SHA-256 sealed
+                </div>
+              )}
+              {ratings[batch.id] && ratings[batch.id].count > 0 && (
+                <div className="mt-1">
+                  <StarRating avg={ratings[batch.id].avg} count={ratings[batch.id].count} />
                 </div>
               )}
             </div>

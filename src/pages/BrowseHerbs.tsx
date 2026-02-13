@@ -6,6 +6,7 @@ import HerbCard from "@/components/HerbCard";
 import DbHerbCard from "@/components/DbHerbCard";
 import { herbBatches } from "@/lib/herbs-data";
 import { useBrowseHerbs } from "@/hooks/useBrowseHerbs";
+import { useAverageRatings } from "@/hooks/useAverageRatings";
 import { useState, useMemo } from "react";
 
 const BrowseHerbs = () => {
@@ -54,6 +55,9 @@ const BrowseHerbs = () => {
     const merged = new Set([...staticCats, ...dbCategories.filter((c) => c !== "All")]);
     return ["All", ...Array.from(merged).sort()];
   }, [dbCategories]);
+
+  const batchIds = useMemo(() => dbHerbs.map((h) => h.id), [dbHerbs]);
+  const ratings = useAverageRatings(batchIds);
 
   const totalResults = filteredStatic.length + dbHerbs.length;
 
@@ -104,7 +108,7 @@ const BrowseHerbs = () => {
                 <HerbCard key={herb.id} herb={herb} />
               ))}
               {dbHerbs.map((herb) => (
-                <DbHerbCard key={herb.id} herb={herb} />
+                <DbHerbCard key={herb.id} herb={herb} rating={ratings[herb.id]} />
               ))}
             </div>
           ) : (
