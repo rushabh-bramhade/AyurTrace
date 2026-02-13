@@ -1,13 +1,15 @@
 import { Link } from "react-router-dom";
 import { ShieldCheck, MapPin } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import StarRating from "@/components/StarRating";
 import type { DbHerbBatch } from "@/hooks/useBrowseHerbs";
 
 interface DbHerbCardProps {
   herb: DbHerbBatch;
+  rating?: { avg: number; count: number };
 }
 
-const DbHerbCard = ({ herb }: DbHerbCardProps) => {
+const DbHerbCard = ({ herb, rating }: DbHerbCardProps) => {
   return (
     <Link
       to={`/verify?batch=${herb.batch_code}`}
@@ -39,6 +41,9 @@ const DbHerbCard = ({ herb }: DbHerbCardProps) => {
           <MapPin className="h-3 w-3" />
           {herb.harvest_region}
         </div>
+        {rating && rating.count > 0 && (
+          <StarRating avg={rating.avg} count={rating.count} />
+        )}
         <div className="flex items-center justify-between pt-2">
           {herb.category && (
             <Badge variant="secondary" className="text-xs">
