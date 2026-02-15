@@ -1,18 +1,29 @@
-import { useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useState, useEffect } from "react";
+import { useSearchParams, Link } from "react-router-dom";
 import { motion } from "framer-motion";
 import { Search, QrCode, ShieldCheck, ShieldAlert, Heart } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
+import { cn } from "@/lib/utils";
 import Layout from "@/components/Layout";
 import VerificationStatus from "@/components/VerificationStatus";
 import QRScanner from "@/components/QRScanner";
-import { getHerbById, getHerbDataForHash } from "@/lib/herbs-data";
-import type { HerbBatch } from "@/lib/herbs-data";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { getHerbById } from "@/lib/herbs-data";
+import type { HerbBatch as StaticHerbBatch } from "@/lib/herbs-data";
 import { supabase } from "@/integrations/supabase/client";
-import { useAuth } from "@/contexts/AuthContext";
+import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
+import { useSavedHerbs } from "@/hooks/useSavedHerbs";
 import ReviewSection from "@/components/ReviewSection";
+import { verifyIntegrity } from "@/lib/hash-utils";
+
+interface ProcessingStep {
+  step: string;
+  date: string;
+  description: string;
+}
 
 interface DbBatch {
   id: string;
@@ -22,90 +33,192 @@ interface DbBatch {
   description: string | null;
   harvest_region: string;
   harvest_date: string;
-  processing_steps: any;
+  processing_steps: ProcessingStep[];
   image_url: string | null;
   price: number;
   unit: string;
   hash: string | null;
   farmer_id: string;
+  farmer_name: string | null;
+}
+
+interface SupabaseHerbBatch {
+  id: string;
+  batch_code: string;
+  herb_name: string;
+  scientific_name: string;
+  harvest_region: string;
+  harvest_date: string;
+  farmer_id: string;
+  hash: string | null;
+  processing_steps: ProcessingStep[];
+  profiles: { name: string } | null;
 }
 
 const Verify = () => {
   const [searchParams] = useSearchParams();
   const initialBatchId = searchParams.get("batch") || "";
   const [batchId, setBatchId] = useState(initialBatchId);
-  const [result, setResult] = useState<HerbBatch | null>(null);
   const [dbResult, setDbResult] = useState<DbBatch | null>(null);
   const [farmerName, setFarmerName] = useState<string>("");
-  const [notFound, setNotFound] = useState(false);
-  const [searched, setSearched] = useState(false);
+  const [isIntegrityOk, setIsIntegrityOk] = useState<boolean | null>(null);
+  
   const { user, role } = useAuth();
   const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const { savedIds, toggleSave, isToggling: isSaving } = useSavedHerbs();
 
-  const handleVerify = async () => {
-    if (!batchId.trim()) return;
-    setSearched(true);
-    setResult(null);
-    setDbResult(null);
-    setFarmerName("");
-
-    // Check static data first
-    const herb = getHerbById(batchId.trim());
-    if (herb) {
-      setResult(herb);
-      setNotFound(false);
-      return;
-    }
-
-    // Check database
-    const { data, error } = await supabase
-      .from("herb_batches")
-      .select("*")
-      .eq("batch_code", batchId.trim())
-      .maybeSingle();
-
-    if (data) {
-      setDbResult(data);
-      setNotFound(false);
-      // Fetch farmer name
-      const { data: profileData } = await supabase
-        .from("profiles")
-        .select("name")
-        .eq("user_id", data.farmer_id)
+  // Optimize: Combine code and ID lookup into a single query or unified state
+  const { data: dbHerb, isLoading: isLoadingHerb } = useQuery({
+    queryKey: ["herb_batch_lookup", batchId],
+    queryFn: async () => {
+      if (!batchId) return null;
+      const cleanId = batchId.trim();
+      
+      // Try looking up by batch_code first
+      const { data: byCode, error: codeError } = await supabase
+        .from("herb_batches")
+        .select("*")
+        .eq("batch_code", cleanId)
         .maybeSingle();
-      setFarmerName(profileData?.name || "Unknown Farmer");
-    } else {
-      setNotFound(true);
-    }
-  };
+      
+      if (byCode) return byCode;
+      
+      // If not found by code, try by ID (UUID)
+      const { data: byId, error: idError } = await supabase
+        .from("herb_batches")
+        .select("*")
+        .eq("id", cleanId)
+        .maybeSingle();
+      
+      if (idError) throw idError;
+      return byId;
+    },
+    enabled: !!batchId && !getHerbById(batchId),
+  });
 
-  const handleSaveHerb = async () => {
-    if (!user || !dbResult) return;
-    const { error } = await supabase.from("saved_herbs").insert({
-      user_id: user.id,
-      batch_id: dbResult.id,
-    });
-    if (error) {
-      if (error.message.includes("duplicate") || error.code === "23505") {
-        toast({ title: "Already Saved", description: "This herb is already in your saved list." });
-      } else {
-        toast({ title: "Error", description: "Failed to save herb.", variant: "destructive" });
+  const verifyMutation = useMutation({
+    mutationFn: async (idToVerify: string) => {
+      const code = idToVerify.trim();
+      if (!code) throw new Error("Batch ID is required");
+
+      // Check static data first
+      const staticHerb = getHerbById(code);
+      if (staticHerb) {
+        return { type: "static", data: staticHerb };
       }
-    } else {
-      toast({ title: "Saved!", description: "Herb added to your saved list." });
+
+      // Fetch database
+      let { data, error } = await supabase
+        .from("herb_batches")
+        .select("*")
+        .eq("batch_code", code)
+        .maybeSingle();
+      
+      if (!data && !error) {
+        const { data: dataById, error: errorById } = await supabase
+          .from("herb_batches")
+          .select("*")
+          .eq("id", code)
+          .maybeSingle();
+        data = dataById;
+        error = errorById;
+      }
+
+      if (error) throw error;
+      if (!data) return { type: "not_found" };
+
+      // Verify Integrity
+      let isValid = false;
+      if (data.hash) {
+        const stepsString = Array.isArray(data.processing_steps) 
+          ? (data.processing_steps as unknown as ProcessingStep[]).map((s) => s.step).join(",")
+          : "";
+          
+        const dataToVerify = {
+          batchCode: data.batch_code,
+          herbName: data.herb_name,
+          scientificName: data.scientific_name,
+          farmerName: (data as any).farmer_name || (data as any).profiles?.name || "",
+          harvestRegion: data.harvest_region,
+          harvestDate: data.harvest_date,
+          farmerId: data.farmer_id,
+          processingSteps: stepsString,
+        };
+        
+        isValid = await verifyIntegrity(dataToVerify, data.hash);
+      }
+
+      // Record verification if user is logged in
+      if (user && role === "customer") {
+        // Check if already verified today to avoid spamming history
+        const today = new Date().toISOString().split('T')[0];
+        const { data: existingHistory } = await supabase
+          .from("verification_history")
+          .select("id")
+          .eq("user_id", user.id)
+          .eq("batch_id", data.id)
+          .gte("verified_at", today)
+          .maybeSingle();
+
+        if (!existingHistory) {
+          await supabase.from("verification_history").insert({
+            user_id: user.id,
+            batch_id: data.id,
+            status: isValid ? "authentic" : "suspicious"
+          });
+          queryClient.invalidateQueries({ queryKey: ["verification_history", user.id] });
+        }
+      }
+
+      return { 
+        type: "database", 
+        data, 
+        isValid, 
+        farmerName: (data as unknown as SupabaseHerbBatch).profiles?.name || "Unknown Farmer" 
+      };
+    },
+    onSuccess: (result) => {
+      if (result.type === "not_found") {
+        setDbResult(null);
+        setIsIntegrityOk(null);
+        setFarmerName("");
+      } else if (result.type === "static") {
+        setIsIntegrityOk(true);
+      } else if (result.type === "database") {
+        setDbResult(result.data as unknown as DbBatch);
+        setIsIntegrityOk(result.isValid);
+        setFarmerName(result.farmerName);
+      }
+    },
+    onError: (error) => {
+      console.error("Verification error:", error);
+      toast({
+        title: "Error",
+        description: (error as Error).message || "Failed to verify batch.",
+        variant: "destructive",
+      });
     }
+  });
+
+  const handleVerify = () => {
+    verifyMutation.mutate(batchId);
   };
 
-  const handleQRScan = (scannedBatchId: string) => {
-    setBatchId(scannedBatchId);
-    // Auto-verify after scan
-    setTimeout(() => {
-      const el = document.querySelector<HTMLButtonElement>("[data-verify-btn]");
-      el?.click();
-    }, 100);
+  useEffect(() => {
+    if (initialBatchId) {
+      setBatchId(initialBatchId);
+      verifyMutation.mutate(initialBatchId);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialBatchId]);
+
+  const handleQRScan = (scannedCode: string) => {
+    setBatchId(scannedCode);
+    verifyMutation.mutate(scannedCode);
   };
 
-  const steps = dbResult?.processing_steps as Array<{ step: string; date: string; description: string }> | undefined;
+  const steps = dbResult?.processing_steps as unknown as ProcessingStep[] | undefined;
 
   return (
     <Layout>
@@ -139,16 +252,24 @@ const Verify = () => {
                 className="pl-10 h-12 text-base"
               />
             </div>
-            <Button variant="hero" size="lg" onClick={handleVerify} data-verify-btn>
+            <Button 
+              variant="hero" 
+              size="lg" 
+              onClick={handleVerify} 
+              data-verify-btn 
+              disabled={verifyMutation.isPending}
+              className="min-w-[120px]"
+            >
+              {verifyMutation.isPending ? <Skeleton className="h-4 w-4 rounded-full mr-2 bg-white/30 animate-pulse" /> : null}
               Verify
             </Button>
           </div>
 
           <div className="text-center text-sm text-muted-foreground mb-8">
-            <p>Try these sample batch IDs: <button onClick={() => setBatchId("ATB-2025-001")} className="text-primary font-medium hover:underline">ATB-2025-001</button>, <button onClick={() => setBatchId("ATB-2025-002")} className="text-primary font-medium hover:underline">ATB-2025-002</button>, <button onClick={() => setBatchId("ATB-2025-003")} className="text-primary font-medium hover:underline">ATB-2025-003</button></p>
+            <p>Try these sample batch IDs: <button onClick={() => { setBatchId("ATB-2025-001"); verifyMutation.mutate("ATB-2025-001"); }} className="text-primary font-medium hover:underline">ATB-2025-001</button>, <button onClick={() => { setBatchId("ATB-2025-002"); verifyMutation.mutate("ATB-2025-002"); }} className="text-primary font-medium hover:underline">ATB-2025-002</button>, <button onClick={() => { setBatchId("ATB-2025-003"); verifyMutation.mutate("ATB-2025-003"); }} className="text-primary font-medium hover:underline">ATB-2025-003</button></p>
           </div>
 
-          {searched && notFound && (
+          {verifyMutation.isSuccess && verifyMutation.data?.type === "not_found" && (
             <motion.div
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
@@ -163,44 +284,68 @@ const Verify = () => {
           )}
 
           {/* Static herb result */}
-          {result && (
+          {verifyMutation.isSuccess && verifyMutation.data?.type === "static" && (
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.5 }}
               className="space-y-6"
             >
-              <VerificationStatus status={result.integrityStatus} hash={result.hash} />
+              <VerificationStatus 
+                status={verifyMutation.data.data.integrityStatus} 
+                hash={verifyMutation.data.data.hash} 
+              />
 
               <div className="bg-card rounded-xl border border-border p-6 space-y-4">
                 <div className="flex items-start gap-4">
-                  <img src={result.image} alt={result.herbName} className="w-20 h-20 rounded-lg object-cover" />
-                  <div>
-                    <h3 className="font-heading text-xl font-bold text-foreground">{result.herbName}</h3>
-                    <p className="text-sm text-muted-foreground italic">{result.scientificName}</p>
-                    <p className="text-sm text-muted-foreground mt-1">{result.description}</p>
+                  <img src={verifyMutation.data.data.image} alt={verifyMutation.data.data.herbName} className="w-20 h-20 rounded-lg object-cover" />
+                  <div className="flex-1">
+                    <h3 className="font-heading text-xl font-bold text-foreground">{verifyMutation.data.data.herbName}</h3>
+                    <p className="text-sm text-muted-foreground italic">{verifyMutation.data.data.scientificName}</p>
+                    <p className="text-sm text-muted-foreground mt-1">{verifyMutation.data.data.description}</p>
                   </div>
+                  {user && role === "customer" && (
+                    <Button 
+                      variant="outline" 
+                      size="sm" 
+                      onClick={() => toggleSave(verifyMutation.data.data.id)} 
+                      disabled={isSaving}
+                      className="shrink-0 gap-1"
+                    >
+                      {isSaving ? (
+                        <Skeleton className="h-4 w-4 rounded-full animate-pulse" />
+                      ) : (
+                        <Heart 
+                          className={cn(
+                            "h-4 w-4 transition-colors",
+                            savedIds.has(verifyMutation.data.data.id) && "fill-destructive text-destructive"
+                          )} 
+                        />
+                      )}
+                      {isSaving ? "Updating..." : savedIds.has(verifyMutation.data.data.id) ? "Saved" : "Save"}
+                    </Button>
+                  )}
                 </div>
 
                 <div className="grid grid-cols-2 gap-4 pt-4 border-t border-border">
                   <div>
                     <span className="text-xs text-muted-foreground">Origin</span>
-                    <p className="text-sm font-medium text-foreground">{result.harvestRegion}</p>
+                    <p className="text-sm font-medium text-foreground">{verifyMutation.data.data.harvestRegion}</p>
                   </div>
                   <div>
                     <span className="text-xs text-muted-foreground">Harvest Date</span>
-                    <p className="text-sm font-medium text-foreground">{result.harvestDate}</p>
+                    <p className="text-sm font-medium text-foreground">{verifyMutation.data.data.harvestDate}</p>
                   </div>
                   <div>
                     <span className="text-xs text-muted-foreground">Farmer</span>
                     <p className="text-sm font-medium text-foreground">
-                      {result.farmer.name}
-                      {result.farmer.verified && <ShieldCheck className="h-3.5 w-3.5 text-verified inline ml-1" />}
+                      {verifyMutation.data.data.farmer.name}
+                      {verifyMutation.data.data.farmer.verified && <ShieldCheck className="h-3.5 w-3.5 text-verified inline ml-1" />}
                     </p>
                   </div>
                   <div>
                     <span className="text-xs text-muted-foreground">Batch ID</span>
-                    <p className="text-sm font-medium text-foreground font-mono">{result.id}</p>
+                    <p className="text-sm font-medium text-foreground font-mono">{verifyMutation.data.data.id}</p>
                   </div>
                 </div>
               </div>
@@ -208,11 +353,11 @@ const Verify = () => {
               <div className="bg-card rounded-xl border border-border p-6">
                 <h3 className="font-heading text-lg font-semibold text-foreground mb-4">Processing Timeline</h3>
                 <div className="space-y-4">
-                  {result.processingSteps.map((step, i) => (
+                  {(verifyMutation.data.data as StaticHerbBatch).processingSteps.map((step, i) => (
                     <div key={i} className="flex gap-4">
                       <div className="flex flex-col items-center">
                         <div className="w-3 h-3 rounded-full bg-primary" />
-                        {i < result.processingSteps.length - 1 && <div className="w-0.5 flex-1 bg-border mt-1" />}
+                        {i < (verifyMutation.data?.data as StaticHerbBatch).processingSteps.length - 1 && <div className="w-0.5 flex-1 bg-border mt-1" />}
                       </div>
                       <div className="pb-4">
                         <div className="font-medium text-sm text-foreground">{step.step}</div>
@@ -227,7 +372,7 @@ const Verify = () => {
           )}
 
           {/* Database herb result */}
-          {dbResult && (
+          {verifyMutation.isSuccess && verifyMutation.data?.type === "database" && dbResult && (
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
@@ -235,7 +380,7 @@ const Verify = () => {
               className="space-y-6"
             >
               {dbResult.hash && (
-                <VerificationStatus status="verified" hash={dbResult.hash} />
+                <VerificationStatus status={isIntegrityOk ? "verified" : "tampered"} hash={dbResult.hash} />
               )}
 
               <div className="bg-card rounded-xl border border-border p-6 space-y-4">
@@ -251,9 +396,24 @@ const Verify = () => {
                     )}
                   </div>
                   {user && role === "customer" && (
-                    <Button variant="outline" size="sm" onClick={handleSaveHerb} className="shrink-0 gap-1">
-                      <Heart className="h-4 w-4" />
-                      Save
+                    <Button 
+                      variant="outline" 
+                      size="sm" 
+                      onClick={() => toggleSave(dbResult.id)} 
+                      disabled={isSaving}
+                      className="shrink-0 gap-1"
+                    >
+                      {isSaving ? (
+                        <Skeleton className="h-4 w-4 rounded-full animate-pulse" />
+                      ) : (
+                        <Heart 
+                          className={cn(
+                            "h-4 w-4 transition-colors",
+                            savedIds.has(dbResult.id) && "fill-destructive text-destructive"
+                          )} 
+                        />
+                      )}
+                      {isSaving ? "Updating..." : savedIds.has(dbResult.id) ? "Saved" : "Save"}
                     </Button>
                   )}
                 </div>

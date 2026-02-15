@@ -1,9 +1,11 @@
 import { useState } from "react";
 import { Link, useLocation } from "react-router-dom";
-import { Menu, X, Shield, LogOut, LayoutDashboard } from "lucide-react";
+import { Menu, X, Shield, LogOut, LayoutDashboard, ShoppingCart } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { useAuth } from "@/contexts/AuthContext";
-import logo from "@/assets/logo.png";
+import { useAuth } from "@/hooks/useAuth";
+import { useCart } from "@/contexts/CartContext";
+import NotificationPanel from "@/components/NotificationPanel";
+import logo from "@/assets/logo-AyurTrace.png";
 
 const navLinks = [
   { to: "/how-it-works", label: "How It Works" },
@@ -15,13 +17,14 @@ const Navbar = () => {
   const [isOpen, setIsOpen] = useState(false);
   const location = useLocation();
   const { user, profile, role, signOut } = useAuth();
+  const { totalItems, setIsCartOpen } = useCart();
 
   return (
     <nav className="sticky top-0 z-50 bg-background/95 backdrop-blur-md border-b border-border">
       <div className="container mx-auto px-4">
-        <div className="flex items-center justify-between h-16">
+        <div className="flex items-center justify-between h-20">
           <Link to="/" className="flex items-center gap-2">
-            <img src={logo} alt="AyurTrace" className="h-9 w-auto" />
+            <img src={logo} alt="AyurTrace" className="h-14 w-auto" />
           </Link>
 
           <div className="hidden md:flex items-center gap-8">
@@ -45,7 +48,7 @@ const Navbar = () => {
               <>
                 {role === "farmer" && (
                   <Button variant="outline" size="sm" asChild>
-                    <Link to="/farmer/dashboard">
+                    <Link to="/farmer-dashboard">
                       <LayoutDashboard className="h-4 w-4 mr-1" />
                       Dashboard
                     </Link>
@@ -53,7 +56,7 @@ const Navbar = () => {
                 )}
                 {role === "customer" && (
                   <Button variant="outline" size="sm" asChild>
-                    <Link to="/customer/dashboard">
+                    <Link to="/customer-dashboard">
                       <LayoutDashboard className="h-4 w-4 mr-1" />
                       Dashboard
                     </Link>
@@ -61,7 +64,7 @@ const Navbar = () => {
                 )}
                 {role === "admin" && (
                   <Button variant="outline" size="sm" asChild>
-                    <Link to="/admin/dashboard">
+                    <Link to="/admin">
                       <LayoutDashboard className="h-4 w-4 mr-1" />
                       Admin
                     </Link>
@@ -70,6 +73,20 @@ const Navbar = () => {
                 <span className="text-sm text-muted-foreground">
                   {profile?.name || user.email}
                 </span>
+                <NotificationPanel />
+                <Button 
+                  variant="ghost" 
+                  size="icon" 
+                  className="relative"
+                  onClick={() => setIsCartOpen(true)}
+                >
+                  <ShoppingCart className="h-5 w-5" />
+                  {totalItems > 0 && (
+                    <span className="absolute -top-1 -right-1 bg-primary text-primary-foreground text-[10px] font-bold h-4 w-4 rounded-full flex items-center justify-center">
+                      {totalItems}
+                    </span>
+                  )}
+                </Button>
                 <Button variant="ghost" size="sm" onClick={signOut}>
                   <LogOut className="h-4 w-4 mr-1" />
                   Log Out

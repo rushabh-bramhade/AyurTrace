@@ -7,9 +7,10 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import Layout from "@/components/Layout";
-import { useAuth } from "@/contexts/AuthContext";
+import { useAuth } from "@/hooks/useAuth";
 import logo from "@/assets/logo.png";
 import { z } from "zod";
+import { Skeleton } from "@/components/ui/skeleton";
 
 const registerSchema = z.object({
   name: z.string().trim().min(2, "Name must be at least 2 characters").max(100),
@@ -27,15 +28,24 @@ const Register = () => {
     password: "",
     role: "",
   });
-  const { signUp, user, loading } = useAuth();
+  const { signUp, user, role, loading } = useAuth();
   const navigate = useNavigate();
   const { toast } = useToast();
 
   useEffect(() => {
-    if (!loading && user) {
-      navigate("/", { replace: true });
+    if (!loading && user && role) {
+      // Role-based redirection even if they try to access /register while logged in
+      if (role === "farmer") {
+        navigate("/farmer-dashboard", { replace: true });
+      } else if (role === "customer") {
+        navigate("/customer-dashboard", { replace: true });
+      } else if (role === "admin") {
+        navigate("/admin", { replace: true });
+      } else {
+        navigate("/", { replace: true });
+      }
     }
-  }, [user, loading, navigate]);
+  }, [user, role, loading, navigate]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -60,23 +70,55 @@ const Register = () => {
     setIsSubmitting(false);
 
     if (error) {
+      console.error("Registration error details:", error);
       let message = "An error occurred during registration.";
       if (error.message.includes("already registered") || error.message.includes("already been registered")) {
         message = "This email is already registered. Please log in instead.";
       } else if (error.message.includes("password")) {
         message = "Password must be at least 8 characters long.";
+      } else if (error.message.toLowerCase().includes("rate limit") || error.message.toLowerCase().includes("too many requests") || error.message.includes("over_email_send_rate_limit")) {
+        message = "Supabase email rate limit exceeded. Please try again in an hour or use one of the pre-confirmed test accounts.";
+      } else if (error.message.includes("email_provider_disabled") || error.message.includes("Email signups are disabled")) {
+        message = "Email signups are currently disabled in the Supabase project settings. Please enable them in Authentication > Providers.";
+      } else {
+        // Fallback to the actual error message if it's not one of the common ones
+        message = error.message;
       }
       toast({ title: "Registration Failed", description: message, variant: "destructive" });
     } else {
       toast({
-        title: "Account Created!",
-        description: "Welcome to AyurTrace. You are now logged in.",
+        title: "Registration Successful!",
+        description: "Please check your email to verify your account before logging in.",
       });
-      navigate("/", { replace: true });
+      navigate("/login", { replace: true });
     }
   };
 
-  if (loading) return null;
+  if (loading) {
+    return (
+      <Layout>
+        <section className="py-12 md:py-20">
+          <div className="container mx-auto px-4 max-w-md">
+            <div className="text-center mb-8">
+              <Skeleton className="h-16 w-16 mx-auto mb-4 rounded-full" />
+              <Skeleton className="h-8 w-64 mx-auto mb-2" />
+              <Skeleton className="h-4 w-72 mx-auto" />
+            </div>
+            <div className="bg-card rounded-xl border border-border p-6 space-y-6">
+              {[1, 2, 3, 4].map((i) => (
+                <div key={i} className="space-y-2">
+                  <Skeleton className="h-4 w-20" />
+                  <Skeleton className="h-10 w-full" />
+                </div>
+              ))}
+              <Skeleton className="h-12 w-full" />
+              <Skeleton className="h-4 w-48 mx-auto" />
+            </div>
+          </div>
+        </section>
+      </Layout>
+    );
+  }
 
   return (
     <Layout>

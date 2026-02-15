@@ -121,3 +121,13 @@
     @apply font-heading;
   }
 }
+
+@layer components {
+  .glass-card {
+    @apply bg-card/80 backdrop-blur-md border border-white/20 shadow-xl;
+  }
+
+  .dark .glass-card {
+    @apply bg-card/60 backdrop-blur-lg border-white/10 shadow-2xl;
+  }
+}

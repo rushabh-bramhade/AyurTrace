@@ -37,9 +37,18 @@ const QRScanner = ({ onScan }: QRScannerProps) => {
         },
         () => {} // ignore scan failures
       );
-    } catch (err: any) {
-      setError("Camera access denied or not available.");
+    } catch (err) {
+      console.error("Scanner error:", err);
+      setError(err instanceof Error ? err.message : "Camera access denied or not available.");
       setIsScanning(false);
+      if (scannerRef.current) {
+        try {
+          scannerRef.current.clear();
+        } catch (clearErr) {
+          console.error("Failed to clear scanner:", clearErr);
+        }
+        scannerRef.current = null;
+      }
     }
   };
 

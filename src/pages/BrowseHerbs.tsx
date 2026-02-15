@@ -1,4 +1,4 @@
-import { Search, Loader2 } from "lucide-react";
+import { Search } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import Layout from "@/components/Layout";
@@ -8,31 +8,19 @@ import { herbBatches } from "@/lib/herbs-data";
 import { useBrowseHerbs } from "@/hooks/useBrowseHerbs";
 import { useAverageRatings } from "@/hooks/useAverageRatings";
 import { useState, useMemo } from "react";
+import { Skeleton } from "@/components/ui/skeleton";
 
 const BrowseHerbs = () => {
-  const [localSearch, setLocalSearch] = useState("");
-  const [localCategory, setLocalCategory] = useState("All");
   const {
     herbs: dbHerbs,
     loading,
-    search: dbSearch,
-    setSearch: setDbSearch,
-    activeCategory: dbCategory,
-    setActiveCategory: setDbCategory,
+    search,
+    setSearch,
+    activeCategory,
+    setActiveCategory,
     categories: dbCategories,
+    error: dbError
   } = useBrowseHerbs();
-
-  // Combine search state
-  const search = localSearch;
-  const setSearch = (val: string) => {
-    setLocalSearch(val);
-    setDbSearch(val);
-  };
-  const activeCategory = localCategory;
-  const setActiveCategory = (val: string) => {
-    setLocalCategory(val);
-    setDbCategory(val);
-  };
 
   // Filter static herbs
   const filteredStatic = useMemo(() => {
@@ -52,12 +40,17 @@ const BrowseHerbs = () => {
   // Merge categories from both sources
   const allCategories = useMemo(() => {
     const staticCats = new Set(herbBatches.map((h) => h.category));
-    const merged = new Set([...staticCats, ...dbCategories.filter((c) => c !== "All")]);
+    const merged = new Set([...staticCats, ...dbCategories]);
     return ["All", ...Array.from(merged).sort()];
   }, [dbCategories]);
 
-  const batchIds = useMemo(() => dbHerbs.map((h) => h.id), [dbHerbs]);
-  const ratings = useAverageRatings(batchIds);
+  const allBatchIds = useMemo(() => {
+    const staticIds = filteredStatic.map((h) => h.id);
+    const dbIds = dbHerbs.map((h) => h.id);
+    return [...staticIds, ...dbIds];
+  }, [filteredStatic, dbHerbs]);
+
+  const ratings = useAverageRatings(allBatchIds);
 
   const totalResults = filteredStatic.length + dbHerbs.length;
 
@@ -97,18 +90,38 @@ const BrowseHerbs = () => {
               ))}
             </div>
           </div>
+          
+          {dbError && (
+            <div className="mb-6 p-4 bg-destructive/10 border border-destructive/20 rounded-xl text-destructive text-sm">
+              Failed to load some verified herbs. Please try refreshing the page.
+            </div>
+          )}
 
           {loading ? (
-            <div className="flex justify-center py-20">
-              <Loader2 className="h-8 w-8 animate-spin text-primary" />
+            <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
+              {[1, 2, 3, 4, 5, 6].map((i) => (
+                <div key={i} className="bg-card rounded-2xl border border-border overflow-hidden shadow-sm">
+                  <Skeleton className="w-full aspect-[4/3]" />
+                  <div className="p-5 space-y-4">
+                    <div className="space-y-2">
+                      <Skeleton className="h-6 w-3/4" />
+                      <Skeleton className="h-4 w-1/2" />
+                    </div>
+                    <div className="flex justify-between items-center pt-2">
+                      <Skeleton className="h-4 w-24" />
+                      <Skeleton className="h-8 w-24 rounded-full" />
+                    </div>
+                  </div>
+                </div>
+              ))}
             </div>
           ) : totalResults > 0 ? (
             <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
-              {filteredStatic.map((herb) => (
-                <HerbCard key={herb.id} herb={herb} />
-              ))}
               {dbHerbs.map((herb) => (
                 <DbHerbCard key={herb.id} herb={herb} rating={ratings[herb.id]} />
+              ))}
+              {filteredStatic.map((herb) => (
+                <HerbCard key={herb.id} herb={herb} rating={ratings[herb.id]} />
               ))}
             </div>
           ) : (

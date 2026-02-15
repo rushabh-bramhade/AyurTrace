@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 
 interface RatingData {
@@ -7,18 +7,20 @@ interface RatingData {
 }
 
 export function useAverageRatings(batchIds: string[]) {
-  const [ratings, setRatings] = useState<Record<string, RatingData>>({});
+  const idsKey = batchIds.sort().join(",");
 
-  useEffect(() => {
-    if (batchIds.length === 0) return;
+  const { data: ratings = {} } = useQuery({
+    queryKey: ["average_ratings", idsKey],
+    queryFn: async () => {
+      if (batchIds.length === 0) return {};
 
-    const fetchRatings = async () => {
       const { data, error } = await supabase
         .from("reviews")
         .select("batch_id, rating")
         .in("batch_id", batchIds);
 
-      if (error || !data) return;
+      if (error) throw error;
+      if (!data) return {};
 
       const grouped: Record<string, number[]> = {};
       for (const r of data) {
@@ -33,11 +35,12 @@ export function useAverageRatings(batchIds: string[]) {
           count: vals.length,
         };
       }
-      setRatings(result);
-    };
-
-    fetchRatings();
-  }, [batchIds.join(",")]);
+      return result;
+    },
+    enabled: batchIds.length > 0,
+    staleTime: 1000 * 60 * 2, // 2 minutes
+    retry: 1,
+  });
 
   return ratings;
 }

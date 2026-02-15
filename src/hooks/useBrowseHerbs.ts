@@ -1,36 +1,37 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useMemo } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import type { Tables } from "@/integrations/supabase/types";
+import { useQuery } from "@tanstack/react-query";
 
 export type DbHerbBatch = Tables<"herb_batches">;
 
 export function useBrowseHerbs() {
-  const [herbs, setHerbs] = useState<DbHerbBatch[]>([]);
-  const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [activeCategory, setActiveCategory] = useState("All");
 
-  useEffect(() => {
-    const fetchHerbs = async () => {
-      setLoading(true);
+  const { data: herbs = [], isLoading: loading, error } = useQuery({
+    queryKey: ["herb_batches", "authentic"],
+    queryFn: async () => {
       const { data, error } = await supabase
         .from("herb_batches")
         .select("*")
-        .eq("status", "active")
+        .eq("status", "authentic")
         .order("created_at", { ascending: false });
 
-      if (!error && data) {
-        setHerbs(data);
-      }
-      setLoading(false);
-    };
+      if (error) throw error;
+      return data as DbHerbBatch[];
+    },
+    retry: 2,
+    staleTime: 1000 * 60 * 5, // 5 minutes
+  });
 
-    fetchHerbs();
-  }, []);
+  if (error) {
+    console.error("Error fetching herbs:", error);
+  }
 
   const categories = useMemo(() => {
     const cats = new Set(herbs.map((h) => h.category).filter(Boolean));
-    return ["All", ...Array.from(cats)] as string[];
+    return Array.from(cats).filter(Boolean) as string[];
   }, [herbs]);
 
   const filtered = useMemo(() => {
